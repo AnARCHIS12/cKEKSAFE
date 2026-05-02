@@ -1,0 +1,183 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build executable
+        run: pyinstaller --noconfirm --clean cKEKSAFE.spec
+
+      - name: Prepare release asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets
+          Copy-Item dist/cKEKSAFE.exe release-assets/cKEKSAFE-windows.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: release-assets/*
+
+  build-linux:
+    name: Build Debian and Fedora Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev rpm
+          sudo gem install --no-document fpm
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build Linux executable
+        run: pyinstaller --noconfirm --clean cKEKSAFE.spec
+
+      - name: Resolve package version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Prepare Linux package root
+        shell: bash
+        run: |
+          mkdir -p pkgroot/usr/bin
+          mkdir -p pkgroot/usr/share/applications
+          mkdir -p pkgroot/usr/share/icons/hicolor/256x256/apps
+          mkdir -p release-assets
+
+          cp dist/cKEKSAFE pkgroot/usr/bin/ckeksafe
+          chmod 755 pkgroot/usr/bin/ckeksafe
+          cp assets/logo-red-black.png pkgroot/usr/share/icons/hicolor/256x256/apps/ckeksafe.png
+
+          {
+            printf '%s\n' '[Desktop Entry]'
+            printf '%s\n' 'Type=Application'
+            printf '%s\n' 'Name=cKEKSAFE'
+            printf '%s\n' 'Comment=Analyse de fichiers avec VirusTotal'
+            printf '%s\n' 'Exec=ckeksafe'
+            printf '%s\n' 'Icon=ckeksafe'
+            printf '%s\n' 'Terminal=false'
+            printf '%s\n' 'Categories=Utility;Security;'
+          } > pkgroot/usr/share/applications/ckeksafe.desktop
+
+      - name: Build DEB package
+        shell: bash
+        run: |
+          fpm \
+            -s dir \
+            -t deb \
+            -n ckeksafe \
+            -v "${VERSION}" \
+            --architecture amd64 \
+            --description "Interface VirusTotal pour analyser des fichiers" \
+            --url "https://github.com/${GITHUB_REPOSITORY}" \
+            --license "MIT" \
+            --maintainer "${GITHUB_REPOSITORY_OWNER}" \
+            --depends libx11-6 \
+            --depends libxcb1 \
+            --depends libxext6 \
+            --depends libxrender1 \
+            --depends libxft2 \
+            --depends libfontconfig1 \
+            -C pkgroot \
+            -p "release-assets/cKEKSAFE_${VERSION}_amd64.deb" \
+            .
+          cp "release-assets/cKEKSAFE_${VERSION}_amd64.deb" release-assets/cKEKSAFE-debian-amd64.deb
+
+      - name: Build Fedora RPM package
+        shell: bash
+        run: |
+          fpm \
+            -s dir \
+            -t rpm \
+            -n ckeksafe \
+            -v "${VERSION}" \
+            --iteration 1 \
+            --architecture x86_64 \
+            --description "Interface VirusTotal pour analyser des fichiers" \
+            --url "https://github.com/${GITHUB_REPOSITORY}" \
+            --license "MIT" \
+            --maintainer "${GITHUB_REPOSITORY_OWNER}" \
+            --depends libX11 \
+            --depends libxcb \
+            --depends libXext \
+            --depends libXrender \
+            --depends libXft \
+            --depends fontconfig \
+            -C pkgroot \
+            -p "release-assets/cKEKSAFE-${VERSION}-1.x86_64.rpm" \
+            .
+          cp "release-assets/cKEKSAFE-${VERSION}-1.x86_64.rpm" release-assets/cKEKSAFE-fedora-x86_64.rpm
+
+      - name: Add portable Linux binary
+        shell: bash
+        run: |
+          cp dist/cKEKSAFE release-assets/cKEKSAFE-linux-x86_64
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: release-assets/*
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - build-windows
+      - build-linux
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/**/*

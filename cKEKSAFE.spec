@@ -1,11 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_data_files
+
+customtkinter_datas = collect_data_files('customtkinter')
+asset_datas = [
+    ('assets/logo-red-black.png', 'assets'),
+    ('assets/logo-red-black.ico', 'assets'),
+    ('assets/logo-red-black-sidebar.png', 'assets'),
+]
 
 a = Analysis(
     ['cKEKSAFE.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=customtkinter_datas + asset_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -29,11 +37,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['lp.ico'],
+    icon='assets/logo-red-black.ico',
 )
