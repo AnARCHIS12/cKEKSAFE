@@ -56,7 +56,7 @@ git push origin v1.0.0
 ```
 
 GitHub Actions va compiler l'app, creer les paquets et les attacher automatiquement a la release `v1.0.0`.
-Un lancement manuel depuis l'onglet Actions cree aussi les artefacts, mais seule une execution sur tag cree une vraie release GitHub.
+Un lancement manuel depuis l'onglet Actions cree aussi une vraie release GitHub. Vous pouvez saisir un tag comme `v1.0.0`, ou laisser vide pour creer un tag automatique du type `v0.0.<numero>`.
 
 ## GitHub Pages
 
